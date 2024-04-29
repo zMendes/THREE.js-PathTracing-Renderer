@@ -58,6 +58,33 @@ vec3 perturbNormal(vec3 nl, vec2 normalScale, vec2 uv)
         return normalize( tsn * mapN );
 }
 
+// the following 3 functions combine to implement Blinn-Phong Lighting
+vec3 doAmbientLighting(vec3 rayColorMask, vec3 materialColor, float ambientIntensity)
+{
+	vec3 ambientColor = rayColorMask * materialColor;
+	return ambientColor * ambientIntensity;
+}
+
+vec3 doDiffuseDirectLighting(vec3 rayColorMask, vec3 materialColor, vec3 lightColor, float diffuseIntensity)
+{
+	vec3 diffuseColor = rayColorMask * materialColor * lightColor;
+	return diffuseColor * diffuseIntensity;
+}
+
+vec3 doBlinnPhongSpecularLighting(vec3 rayColorMask, vec3 surfaceNormal, vec3 halfwayVector, vec3 lightColor, float materialRoughness, float diffuseIntensity)
+{
+	// for dielectric materials (non-conductors), specular color is unaffected by surface color
+	// for metal materials (conductors) however, specular color gets tinted by the metal surface color
+	// therefore, in the metal case, 'rayColorMask' will get pre-tinted before it is passed into this function
+	vec3 specularColor = rayColorMask; // will either be white for dielectrics (usually vec3(1,1,1)), or tinted by metal color for metallics
+	specularColor *= clamp(lightColor, 0.0, 4.0);
+	float shininess = 1.0 - materialRoughness;
+	float shininessExponent = max(2000.0 * shininess * shininess * shininess, 5.0);
+	float specularIntensity = pow(max(0.0, dot(surfaceNormal, halfwayVector)), shininessExponent); // this is a powered cosine with shininess as the exponent
+	// makes specular highlights fade away as surface shininess and diffuseIntensity decrease
+	return specularColor * (specularIntensity * shininess * diffuseIntensity);
+}
+
 
 //-----------------------------------------------------------------------
 float SceneIntersect()
@@ -66,8 +93,9 @@ float SceneIntersect()
 	float d;
 	float t = INFINITY;
 	vec3 n;
-	
-        d = SphereIntersect( spheres[0].radius, spheres[0].position, rayOrigin, rayDirection );
+
+
+	d = SphereIntersect( spheres[0].radius, spheres[0].position, rayOrigin, rayDirection );
 	if (d < t)
 	{
 		t = d;
@@ -96,6 +124,7 @@ float SceneIntersect()
 		hitColor = spheres[2].color;
 		hitType = spheres[2].type;
 	}
+
 	
 	d = RectangleIntersect( rectangles[0].position, rectangles[0].normal, rectangles[0].radiusU, rectangles[0].radiusV, rayOrigin, rayDirection );
 	if (d < t)
@@ -119,29 +148,49 @@ vec3 CalculateRadiance()
 {
 	vec3 accumCol = vec3(0);
 	vec3 mask = vec3(1);
-	vec3 checkCol0 = vec3(1,1,0) * 0.6;
-        vec3 checkCol1 = vec3(1,0,0) * 0.6;
+	vec3 reflectionMask = vec3(1);
+	vec3 reflectionRayOrigin = vec3(0);
+	vec3 reflectionRayDirection = vec3(0);
+	vec3 reflectionMask2 = vec3(1);
+	vec3 reflectionRayOrigin2 = vec3(0);
+	vec3 reflectionRayDirection2 = vec3(0);
+	vec3 reflectionMask3 = vec3(1);
+	vec3 reflectionRayOrigin3 = vec3(0);
+	vec3 reflectionRayDirection3 = vec3(0);
+	vec3 checkCol0 = vec3(1,1,0) * 0.8;
+        vec3 checkCol1 = vec3(1,0,0) * 0.8;
+	vec3 skyColor = vec3(0.01, 0.15, 0.7);
+	vec3 sunlightColor = vec3(1);
+	vec3 ambientColor = vec3(0);
+	vec3 diffuseColor = vec3(0);
+	vec3 specularColor = vec3(0);
 	vec3 tdir;
-	vec3 dirToLight = normalize(vec3(-0.2, 1.0, 0.7));
+	vec3 directionToLight = normalize(vec3(-0.2, 1.0, 0.7));
         vec3 n, nl, x;
+	vec3 halfwayVector;
 
         vec2 sphereUV;
 
 	float t;
-	float nc, nt, ratioIoR, Re, Tr;
-	float P, RP, TP;
+	float ni, nt, ratioIoR, Re, Tr;
+	float ambientIntensity = 0.2;
+	float diffuseIntensity;
+	float specularIntensity;
 
-        int previousIntersecType = -100;
+        int previousIntersecType;
+	int bounceIsSpecular = FALSE;
+        int sampleLight = FALSE;
+	int willNeedReflectionRay = FALSE;
+	int willNeedReflectionRay2 = FALSE;
+	int willNeedReflectionRay3 = FALSE;
+	int reflectionIsFromMetal = FALSE;
 
-        bool firstTypeWasREFR = false;
-        bool sampleLight = false;
+	hitType = -100;
 	
 
-        for (int bounces = 0; bounces < 8; bounces++)
+        for (int bounces = 0; bounces < 12; bounces++)
 	{
-		
-		float sun = max(0.0, dot(rayDirection, dirToLight));
-                vec3 skyColor = vec3(0.0, 0.11, 0.5) + (pow(sun, 50.0) * vec3(5));
+		previousIntersecType = hitType;
 
 		t = SceneIntersect();
 		
@@ -152,28 +201,101 @@ vec3 CalculateRadiance()
                                 accumCol += mask * skyColor;
                                 break;
                         }
-			else if (previousIntersecType == REFR)
-				accumCol += mask * skyColor * 0.51;
-			else if (previousIntersecType == SPEC)
-				accumCol += mask * skyColor * 0.2;
+			else if (sampleLight == TRUE)
+			{
+				accumCol += diffuseColor + specularColor;
+			}
+			else if (bounceIsSpecular == TRUE && reflectionIsFromMetal == FALSE)
+			{
+				accumCol += mask * skyColor;
+			}
+			
+
+			if (willNeedReflectionRay == TRUE)
+			{
+				mask = reflectionMask;
+				rayOrigin = reflectionRayOrigin;
+				rayDirection = reflectionRayDirection;
+				hitType = -100;
+				willNeedReflectionRay = FALSE;
+				sampleLight = FALSE;
+				bounceIsSpecular = TRUE;
+				continue;
+			}
+
+			if (willNeedReflectionRay2 == TRUE)
+			{
+				mask = reflectionMask2;
+				rayOrigin = reflectionRayOrigin2;
+				rayDirection = reflectionRayDirection2;
+				hitType = -100;
+				willNeedReflectionRay2 = FALSE;
+				sampleLight = FALSE;
+				bounceIsSpecular = TRUE;
+				continue;
+			}
+
+			if (willNeedReflectionRay3 == TRUE)
+			{
+				mask = reflectionMask3;
+				rayOrigin = reflectionRayOrigin3;
+				rayDirection = reflectionRayDirection3;
+				hitType = -100;
+				willNeedReflectionRay3 = FALSE;
+				sampleLight = FALSE;
+				bounceIsSpecular = TRUE;
+				continue;
+			}
 
                         break;
 		}
 
                 
-                // if we got here and sampleLight is still true, the shadow rays failed to find a light source or sky,
-                // so make shadows on checkerboard or yellow sphere and exit
-                if (sampleLight)
+                // if we get here and sampleLight is still TRUE, shadow ray failed to find the light source 
+		// the ray hit an occluding object along its way to the light
+                if (sampleLight == TRUE)
                 {
-			if (previousIntersecType == CHECK)
+			if (bounces == 1 && hitType == REFR && previousIntersecType == CHECK)
 			{
-				if (hitType == REFR) // glass sphere, lighter shadow
-                                	accumCol *= 0.8;
-				else if (hitType == SPEC) // yellow spec sphere, darker shadow
-					accumCol *= 0.5;
+				accumCol *= 3.0;
+				break;
 			}
-                        
-                        //accumCol = mask;
+
+                        if (willNeedReflectionRay == TRUE)
+			{
+				mask = reflectionMask;
+				rayOrigin = reflectionRayOrigin;
+				rayDirection = reflectionRayDirection;
+				hitType = -100;
+				willNeedReflectionRay = FALSE;
+				sampleLight = FALSE;
+				bounceIsSpecular = TRUE;
+				continue;
+			}
+
+			if (willNeedReflectionRay2 == TRUE)
+			{
+				mask = reflectionMask2;
+				rayOrigin = reflectionRayOrigin2;
+				rayDirection = reflectionRayDirection2;
+				hitType = -100;
+				willNeedReflectionRay2 = FALSE;
+				sampleLight = FALSE;
+				bounceIsSpecular = TRUE;
+				continue;
+			}
+
+			if (willNeedReflectionRay3 == TRUE)
+			{
+				mask = reflectionMask3;
+				rayOrigin = reflectionRayOrigin3;
+				rayDirection = reflectionRayDirection3;
+				hitType = -100;
+				willNeedReflectionRay3 = FALSE;
+				sampleLight = FALSE;
+				bounceIsSpecular = TRUE;
+				continue;
+			}
 
                         break;
                 }
@@ -183,86 +305,119 @@ vec3 CalculateRadiance()
 		n = normalize(hitNormal);
                 nl = dot(n, rayDirection) < 0.0 ? n : -n;
 		x = rayOrigin + rayDirection * t;
+		halfwayVector = normalize(-rayDirection + directionToLight); // this is Blinn's modification to Phong's model
+		
 
 		    
                 if (hitType == CHECK ) // Ideal DIFFUSE reflection
 		{
+			bounceIsSpecular = FALSE;
+
 			float q = clamp( mod( dot( floor(x.xz * 0.04), vec2(1.0) ), 2.0 ) , 0.0, 1.0 );
 			hitColor = checkCol0 * q + checkCol1 * (1.0 - q);	
 
-			if (previousIntersecType == SPEC)
-				accumCol += hitColor * 0.3;
-			else if (previousIntersecType == REFR)
-				accumCol += hitColor * 0.8;
-			else accumCol += hitColor;
+			ambientColor = doAmbientLighting(mask, hitColor, ambientIntensity);
+			accumCol += ambientColor;
 
-                        rayDirection = dirToLight; // shadow ray
+			diffuseIntensity = max(0.0, dot(nl, directionToLight));
+			diffuseColor = doDiffuseDirectLighting(mask, hitColor, sunlightColor, diffuseIntensity);
+
+			specularColor = vec3(0);
+
+                        rayDirection = directionToLight; // shadow ray
 			rayOrigin = x + nl * uEPS_intersect;
-
-                        sampleLight = true;
-			previousIntersecType = CHECK;
+                        sampleLight = TRUE;
                         continue;
 		}
 
                 if (hitType == SPEC)  // special case SPEC/DIFF/COAT material for this classic scene
 		{
-                        sphereUV.x = atan(nl.z, nl.x) * ONE_OVER_TWO_PI + 0.5;
-			sphereUV.y = asin(clamp(nl.y, -1.0, 1.0)) * ONE_OVER_PI + 0.5;
-                        sphereUV *= 2.0;
+			bounceIsSpecular = FALSE;
 
-			nl = perturbNormal(nl, vec2(-0.5, 0.5), sphereUV);
+                        sphereUV.x = atan(-nl.z, nl.x) * ONE_OVER_PI;
+			sphereUV.y = acos(-nl.y) * ONE_OVER_PI;
+			sphereUV.y *= 2.0;
 
-                        // temporarily treat as diffuse, apply typical NdotL lighting 
-                        accumCol += hitColor * max(0.05, dot(nl, dirToLight));
+			nl = perturbNormal(nl, vec2(0.6, 0.6), sphereUV);
 
-			
-			rayDirection = reflect(rayDirection, nl);
+                        ambientColor = doAmbientLighting(mask, hitColor, ambientIntensity);
+			accumCol += ambientColor;
+
+			diffuseIntensity = max(0.0, dot(nl, directionToLight));
+			diffuseColor = doDiffuseDirectLighting(mask, hitColor, sunlightColor, diffuseIntensity);
+
+			specularColor = doBlinnPhongSpecularLighting(mask, nl, halfwayVector, sunlightColor, 0.6, diffuseIntensity);
+
+			if (bounces == 0)
+			{
+				reflectionMask = mask * 0.15;
+				reflectionRayDirection = reflect(rayDirection, nl); // reflect ray from surface
+				reflectionRayOrigin = x + nl * uEPS_intersect;
+				willNeedReflectionRay = TRUE;
+				reflectionIsFromMetal = TRUE;
+			}
+
+			rayDirection = directionToLight; // shadow ray
 			rayOrigin = x + nl * uEPS_intersect;
-
-			previousIntersecType = SPEC;
+			sampleLight = TRUE;
                         continue;
 		}
 		
 		if (hitType == REFR)  // Ideal dielectric REFRACTION
 		{
-			if (previousIntersecType == SPEC)
+			ni = 1.0; // IOR of Air
+			nt = hitColor == vec3(1) ? 1.01 : 1.04; // IOR of this classic demo's Glass
+			//Re = calcFresnelReflectance(rayDirection, n, ni, nt, ratioIoR);
+			ratioIoR = ni / nt;
+
+			if (bounces == 0)
 			{
-				accumCol += skyColor * 0.2;
-				break;
+				reflectionMask = mask * 0.04;// * Re;
+				reflectionRayDirection = reflect(rayDirection, nl); // reflect ray from surface
+				reflectionRayOrigin = x + nl * uEPS_intersect;
+				willNeedReflectionRay = TRUE;
 			}
 
-			previousIntersecType = REFR;
-
-			nc = 1.0; // IOR of Air
-			nt = hitColor == vec3(1) ? 1.001 : 1.01; // IOR of this classic demo's Glass
-			Re = calcFresnelReflectance(rayDirection, n, nc, nt, ratioIoR);
-                        Tr = 1.0 - Re;
-			P  = 0.25 + (0.5 * Re);
-                	RP = Re / P;
-                	TP = Tr / (1.0 - P);
-
-			if (rand() < P && hitColor != vec3(1))
+			if (bounces == 1 && previousIntersecType == REFR)
 			{
-				//mask *= RP;
-				mask *= 0.4;
-				rayDirection = reflect(rayDirection, nl); // reflect ray from surface
-				rayOrigin = x + nl * uEPS_intersect;
-				continue;
+				reflectionMask2 = mask * 0.04;// * Re;
+				reflectionRayDirection2 = reflect(rayDirection, nl); // reflect ray from surface
+				reflectionRayOrigin2 = x + nl * uEPS_intersect;
+				willNeedReflectionRay2 = TRUE;
 			}
+
+			if (bounces == 2 && previousIntersecType == REFR)
+			{
+				reflectionMask3 = mask * 0.04;// * Re;
+				reflectionRayDirection3 = reflect(rayDirection, nl); // reflect ray from surface
+				reflectionRayOrigin3 = x + nl * uEPS_intersect;
+				willNeedReflectionRay3 = TRUE;
+			}
+
+			ambientColor = vec3(0);
+			diffuseColor = vec3(0);
+			diffuseIntensity = max(0.0, dot(nl, directionToLight));
+			specularColor = doBlinnPhongSpecularLighting(mask, nl, halfwayVector, sunlightColor, 0.5, diffuseIntensity);
+			if (bounces == 0)
+				accumCol += specularColor;
+			else accumCol += specularColor * 0.2;
+			specularColor = vec3(0);
 
 			// transmit ray through surface
 			//mask *= hitColor;
-			mask *= TP;
+			//mask *= Tr;
+			mask *= 0.95;
 			
 			tdir = refract(rayDirection, nl, ratioIoR);
 			rayDirection = tdir;
 			rayOrigin = x - nl * uEPS_intersect;
+			bounceIsSpecular = TRUE;
 			
 			continue;
 			
 		} // end if (hitType == REFR)
 		
-	} // end for (int bounces = 0; bounces < 8; bounces++)
+	} // end for (int bounces = 0; bounces < 12; bounces++)
 	
 	
 	return max(vec3(0), accumCol);
@@ -279,12 +434,10 @@ void SetupScene(void)
         vec3 yellowSpherePos = glassSpherePos + vec3(0,-19, 5);
 	//vec3 yellowSpherePos = glassSpherePos + vec3(50,-25, 70);
         float orbitRadius = 70.0;
-        spheres[0] = Sphere( 28.0, glassSpherePos, z, vec3(1), REFR);//glass sphere
-	spheres[1] = Sphere( 26.5, glassSpherePos, z, vec3(0.95), REFR);//glass sphere
+        spheres[0] = Sphere( 28.0, glassSpherePos, z, vec3(1), REFR);//glass sphere 28.0
+	spheres[1] = Sphere( 26.5, glassSpherePos, z, vec3(0.95), REFR);//glass sphere 26.5
 	spheres[2] = Sphere( 27.0, yellowSpherePos + vec3(-cos(mod(uTime * 1.1, TWO_PI)) * orbitRadius, 0, sin(mod(uTime * 1.1, TWO_PI)) * orbitRadius),
-                        z, vec3(1.0, 0.85, 0.0), SPEC);//yellow reflective sphere
-
-	//spheres[1] = Sphere( 27.0, yellowSpherePos, z, vec3(1.0, 0.8, 0.0), SPEC);//yellow reflective sphere
+                         z, vec3(1.0, 0.85, 0.0), SPEC);//yellow reflective sphere
 	
 	rectangles[0] = Rectangle( vec3(100, 0, -100), vec3(0, 1, 0), 200.0, 400.0, z, vec3(1), CHECK);// Checkerboard Ground plane 
 }
