@@ -35,25 +35,25 @@ Rectangle rectangles[N_RECTANGLES];
 #include <pathtracing_sphere_intersect>
 
 
-vec3 perturbNormal(vec3 nl, vec2 normalScale, vec2 uv)
+vec3 perturbNormal(vec3 normal, vec2 bumpScale, vec2 uv)
 {
-	// note: incoming vec3 nl is assumed to be normalized
-        vec3 S = normalize( cross( abs(nl.y) < 0.9 ? vec3(0, 1, 0) : vec3(0, 0, 1), nl ) );
-        vec3 T = cross(nl, S);
-        vec3 N = nl;
+	// note: incoming vec3 normal is assumed to be normalized
+        vec3 S = normalize(cross(vec3(0, 0.9938837346736189, 0.11043152607484655), normal));
+        vec3 T = cross(normal, S);
+        vec3 N = normal;
 	// invert S, T when the UV direction is backwards (from mirrored faces),
 	// otherwise it will do the normal mapping backwards.
-	vec3 NfromST = cross( S, T );
-	if( dot( NfromST, N ) < 0.0 )
-	{
-		S *= -1.0;
-		T *= -1.0;
-	}
+	// vec3 NfromST = cross( S, T );
+	// if( dot( NfromST, N ) < 0.0 )
+	// {
+	// 	S *= -1.0;
+	// 	T *= -1.0;
+	// }
         mat3 tsn = mat3( S, T, N );
 
 	vec3 mapN = texture(tTileNormalMapTexture, uv).xyz * 2.0 - 1.0;
 	//mapN = normalize(mapN);
-        mapN.xy *= normalScale;
+        mapN.xy *= bumpScale;
         
         return normalize( tsn * mapN );
 }
@@ -94,6 +94,15 @@ float SceneIntersect()
 	float t = INFINITY;
 	vec3 n;
 
+	d = RectangleIntersect( rectangles[0].position, rectangles[0].normal, rectangles[0].radiusU, rectangles[0].radiusV, rayOrigin, rayDirection );
+	if (d < t)
+	{
+                t = d;
+                hitNormal = rectangles[0].normal;
+                hitEmission = rectangles[0].emission;
+                hitColor = rectangles[0].color;
+                hitType = rectangles[0].type;
+	}
 
 	d = SphereIntersect( spheres[0].radius, spheres[0].position, rayOrigin, rayDirection );
 	if (d < t)
@@ -125,16 +134,6 @@ float SceneIntersect()
 		hitType = spheres[2].type;
 	}
 
-	
-	d = RectangleIntersect( rectangles[0].position, rectangles[0].normal, rectangles[0].radiusU, rectangles[0].radiusV, rayOrigin, rayDirection );
-	if (d < t)
-	{
-                t = d;
-                hitNormal = rectangles[0].normal;
-                hitEmission = rectangles[0].emission;
-                hitColor = rectangles[0].color;
-                hitType = rectangles[0].type;
-	}
         
 	return t;
 	
@@ -257,7 +256,7 @@ vec3 CalculateRadiance()
                 {
 			if (bounces == 1 && hitType == REFR && previousIntersecType == CHECK)
 			{
-				accumCol *= 3.0;
+				accumCol *= 3.5; // make shadow underneath glass sphere a little lighter
 				break;
 			}
 
@@ -338,15 +337,15 @@ vec3 CalculateRadiance()
 			sphereUV.y = acos(-nl.y) * ONE_OVER_PI;
 			sphereUV.y *= 2.0;
 
-			nl = perturbNormal(nl, vec2(0.6, 0.6), sphereUV);
+			nl = perturbNormal(nl, vec2(0.5, 0.5), sphereUV);
 
                         ambientColor = doAmbientLighting(mask, hitColor, ambientIntensity);
-			accumCol += ambientColor;
+			accumCol += ambientColor * 0.6;
 
 			diffuseIntensity = max(0.0, dot(nl, directionToLight));
 			diffuseColor = doDiffuseDirectLighting(mask, hitColor, sunlightColor, diffuseIntensity);
 
-			specularColor = doBlinnPhongSpecularLighting(mask, nl, halfwayVector, sunlightColor, 0.6, diffuseIntensity);
+			specularColor = doBlinnPhongSpecularLighting(mask, nl, halfwayVector, sunlightColor * 2.0, 0.6, diffuseIntensity);
 
 			if (bounces == 0)
 			{
@@ -367,6 +366,7 @@ vec3 CalculateRadiance()
 		{
 			ni = 1.0; // IOR of Air
 			nt = hitColor == vec3(1) ? 1.01 : 1.04; // IOR of this classic demo's Glass
+
 			//Re = calcFresnelReflectance(rayDirection, n, ni, nt, ratioIoR);
 			ratioIoR = ni / nt;
 
@@ -396,8 +396,9 @@ vec3 CalculateRadiance()
 
 			ambientColor = vec3(0);
 			diffuseColor = vec3(0);
+
 			diffuseIntensity = max(0.0, dot(nl, directionToLight));
-			specularColor = doBlinnPhongSpecularLighting(mask, nl, halfwayVector, sunlightColor, 0.5, diffuseIntensity);
+			specularColor = doBlinnPhongSpecularLighting(mask, nl, halfwayVector, sunlightColor * 1.5, 0.5, diffuseIntensity);
 			if (bounces == 0)
 				accumCol += specularColor;
 			else accumCol += specularColor * 0.2;
@@ -435,11 +436,11 @@ void SetupScene(void)
 	//vec3 yellowSpherePos = glassSpherePos + vec3(50,-25, 70);
         float orbitRadius = 70.0;
         spheres[0] = Sphere( 28.0, glassSpherePos, z, vec3(1), REFR);//glass sphere 28.0
-	spheres[1] = Sphere( 26.5, glassSpherePos, z, vec3(0.95), REFR);//glass sphere 26.5
+	spheres[1] = Sphere( 26.5, glassSpherePos, z, vec3(0.99), REFR);//glass sphere 26.5
 	spheres[2] = Sphere( 27.0, yellowSpherePos + vec3(-cos(mod(uTime * 1.1, TWO_PI)) * orbitRadius, 0, sin(mod(uTime * 1.1, TWO_PI)) * orbitRadius),
                          z, vec3(1.0, 0.85, 0.0), SPEC);//yellow reflective sphere
 	
-	rectangles[0] = Rectangle( vec3(100, 0, -100), vec3(0, 1, 0), 200.0, 400.0, z, vec3(1), CHECK);// Checkerboard Ground plane 
+	rectangles[0] = Rectangle( vec3(100, 0, -100), vec3(0,1,0), 200.0, 400.0, z, vec3(1), CHECK);// Checkerboard Ground plane 
 }
 
 //#include <pathtracing_main>
@@ -485,8 +486,10 @@ void main( void )
         // point on aperture to focal point
         vec3 finalRayDir = normalize(focalPoint - randomAperturePos);
         
-        rayOrigin = uUseOrthographicCamera ? cameraPosition + (camRight * pixelPos.x * uULen * 100.0) + (camUp * pixelPos.y * uVLen * 100.0) + randomAperturePos :
-					     cameraPosition + randomAperturePos; 
+        rayOrigin = cameraPosition + randomAperturePos;
+	rayOrigin += !uUseOrthographicCamera ? vec3(0) : 
+		     (camRight * pixelPos.x * uULen * 100.0) + (camUp * pixelPos.y * uVLen * 100.0);
+					     
 	rayDirection = finalRayDir;
 
 
