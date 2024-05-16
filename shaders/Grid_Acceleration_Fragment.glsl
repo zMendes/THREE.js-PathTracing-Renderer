@@ -10,7 +10,7 @@ precision highp sampler2D;
 
 #define MAX_DISPLACEMENT 100.0 // how high can the vertices rise out of the ground plane
 
-#define DISP_MAP_SEGMENTS 1024.0 // each segment quad is made of 2 triangles, so the acc. structure multiplies this number by 2!
+#define DISP_MAP_SEGMENTS 1024.0//1024.0 // each segment quad is made of 2 triangles, so the acc. structure multiplies this number by 2!
 // now we have Width(#segments) * Height(#segments) * 2(triangles per quad) to get the total triangles...
 // so in this case 1024.0 x 1024.0 x 2 = 2,097,152 raytraced triangles with shadows in realtime!
 
@@ -306,14 +306,10 @@ void main(void)
 
 	// calculate unique seed for rng() function
 	seed = uvec2(uFrameCounter, uFrameCounter + 1.0) * uvec2(gl_FragCoord);
-
 	// initialize rand() variables
-	counter = -1.0; // will get incremented by 1 on each call to rand()
-	channel = 0; // the final selected color channel to use for rand() calc (range: 0 to 3, corresponds to R,G,B, or A)
 	randNumber = 0.0; // the final randomly-generated number (range: 0.0 to 1.0)
-	randVec4 = vec4(0); // samples and holds the RGBA blueNoise texture value for this pixel
-	randVec4 = texelFetch(tBlueNoiseTexture, ivec2(mod(gl_FragCoord.xy + floor(uRandomVec2 * 256.0), 256.0)), 0);
-	
+	blueNoise = texelFetch(tBlueNoiseTexture, ivec2(mod(floor(gl_FragCoord.xy), 256.0)), 0).r;
+
 	vec2 pixelOffset = vec2( tentFilter(rand()), tentFilter(rand()) ) * 0.5;
 	// we must map pixelPos into the range -1.0 to +1.0
 	vec2 pixelPos = ((gl_FragCoord.xy + vec2(0.5) + pixelOffset) / uResolution) * 2.0 - 1.0;
@@ -346,8 +342,8 @@ void main(void)
         }
 	else
 	{
-                previousColor *= 0.9; // motion-blur trail amount (old image)
-                pixelColor *= 0.1; // brightness of new image (noisy)
+                previousColor *= 0.8; // motion-blur trail amount (old image)
+                pixelColor *= 0.2; // brightness of new image (noisy)
         }
 
 	// if current raytraced pixel didn't return any color value, just use the previous frame's pixel color
