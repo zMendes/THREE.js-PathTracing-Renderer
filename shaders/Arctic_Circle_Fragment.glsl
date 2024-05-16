@@ -406,7 +406,7 @@ vec3 CalculateRadiance()
 			vec3 randomSkyVec = randomCosWeightedDirectionInHemisphere(mix(n, up, 0.9));
 			vec3 skyColor = Get_Sky_Color(randomSkyVec);
 			if (dot(randomSkyVec, uSunDirection) > 0.98) skyColor *= 0.01;
-			vec3 sunColor = clamp(Get_Sky_Color(randomDirectionInSpecularLobe(uSunDirection, 0.1)), 0.0, 2.0);
+			vec3 sunColor = clamp(Get_Sky_Color(randomDirectionInSpecularLobe(uSunDirection,  0.1)), 0.0, 2.0);
 			float terrainLayer = clamp( ((x.y + -TERRAIN_LIFT) + (rockNoise * 1000.0) * n.y) / (TERRAIN_HEIGHT * 1.2), 0.0, 1.0 );
 			
 			if (x.y > uWaterLevel && terrainLayer > 0.95 && terrainLayer > 0.9 - n.y)
@@ -568,14 +568,10 @@ void main( void )
 	
 	// calculate unique seed for rng() function
 	seed = uvec2(uFrameCounter, uFrameCounter + 1.0) * uvec2(gl_FragCoord);
-
 	// initialize rand() variables
-	counter = -1.0; // will get incremented by 1 on each call to rand()
-	channel = 0; // the final selected color channel to use for rand() calc (range: 0 to 3, corresponds to R,G,B, or A)
 	randNumber = 0.0; // the final randomly-generated number (range: 0.0 to 1.0)
-	randVec4 = vec4(0); // samples and holds the RGBA blueNoise texture value for this pixel
-	randVec4 = texelFetch(tBlueNoiseTexture, ivec2(mod(gl_FragCoord.xy + floor(uRandomVec2 * 256.0), 256.0)), 0);
-	
+	blueNoise = texelFetch(tBlueNoiseTexture, ivec2(mod(floor(gl_FragCoord.xy), 256.0)), 0).r;
+
 	vec2 pixelOffset = vec2( tentFilter(rand()), tentFilter(rand()) ) * 0.5;
 	// we must map pixelPos into the range -1.0 to +1.0
 	vec2 pixelPos = ((gl_FragCoord.xy + vec2(0.5) + pixelOffset) / uResolution) * 2.0 - 1.0;
