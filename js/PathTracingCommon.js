@@ -3122,7 +3122,12 @@ void main( void )
 
 	vec2 pixelOffset;
 	
-	pixelOffset = vec2( tentFilter(uRandomVec2.x), tentFilter(uRandomVec2.y) );
+	if (uSampleCounter < 50.0)
+	{
+		pixelOffset = vec2( tentFilter(rand()), tentFilter(rand()) );
+		pixelOffset *= uCameraIsMoving ? 0.5 : 1.0;
+	}	
+	else pixelOffset = vec2( tentFilter(uRandomVec2.x), tentFilter(uRandomVec2.y) );
 	
 	// we must map pixelPos into the range -1.0 to +1.0: (-1.0,-1.0) is bottom-left screen corner, (1.0,1.0) is top-right
 	vec2 pixelPos = ((gl_FragCoord.xy + vec2(0.5) + pixelOffset) / uResolution) * 2.0 - 1.0;
@@ -3157,7 +3162,7 @@ void main( void )
 	// perform path tracing and get resulting pixel color
 	vec4 currentPixel = vec4( vec3(CalculateRadiance(objectNormal, objectColor, objectID, pixelSharpness)), 0.0 );
 
-// if difference between normals of neighboring pixels is less than the first edge0 threshold, the white edge line effect is considered off (0.0)
+	// if difference between normals of neighboring pixels is less than the first edge0 threshold, the white edge line effect is considered off (0.0)
 	float edge0 = 0.2; // edge0 is the minimum difference required between normals of neighboring pixels to start becoming a white edge line
 	// any difference between normals of neighboring pixels that is between edge0 and edge1 smoothly ramps up the white edge line brightness (smoothstep 0.0-1.0)
 	float edge1 = 0.6; // once the difference between normals of neighboring pixels is >= this edge1 threshold, the white edge line is considered fully bright (1.0)
@@ -3216,4 +3221,3 @@ void main( void )
 	pc_fragColor = vec4(previousPixel.rgb + currentPixel.rgb, currentPixel.a);
 }
 `;
-
