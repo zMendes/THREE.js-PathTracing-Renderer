@@ -1,6 +1,5 @@
 // scene/demo-specific variables go here
-let torusObject, sphereObject;
-var dx, dy, dz;
+let torusObject;
 
 // called automatically from within initTHREEjs() function (located in InitCommon.js file)
 function initSceneData()
@@ -13,7 +12,7 @@ function initSceneData()
 	cameraFlightSpeed = 60;
 
 	// pixelRatio is resolution - range: 0.5(half resolution) to 1.0(full resolution)
-	pixelRatio = mouseControl ? 0.75 : 0.75;
+	pixelRatio = mouseControl ? 1 : 0.75;
 
 	EPS_intersect = 0.01;
 
@@ -22,26 +21,15 @@ function initSceneData()
 	pathTracingScene.add(torusObject);
 
 	torusObject.rotation.set((Math.PI * 0.5) - 0.05, -0.05, 0);
-	torusObject.position.set(-60, 30, 50);
-	torusObject.scale.set(180.5, 180.5, 81.5);
-
-	//Sphere object
-	sphereObject = new THREE.Object3D();
-	pathTracingScene.add(sphereObject);
-
-	sphereObject.rotation.set(0, 0, 0);
-	sphereObject.position.set(-50, 2, 0);
-	sphereObject.scale.set(2, 2, 2);
+	torusObject.position.set(-60, 22, 50);
+	torusObject.scale.set(150.5, 150.5, 90.5);
 
 	// set camera's field of view
 	worldCamera.fov = 60;
 	focusDistance = 130.0;
-	dx = 0.01;
-	dy = 0.01;
-	dz = 0;
 
 	// position and orient camera
-	cameraControlsObject.position.set(0, 20, 120);
+	cameraControlsObject.position.set(-103, 41, 118);
 	///cameraControlsYawObject.rotation.y = 0.0;
 	// look slightly downward
 	///cameraControlsPitchObject.rotation.x = -0.4;
@@ -49,7 +37,6 @@ function initSceneData()
 
 	// scene/demo-specific uniforms go here
 	pathTracingUniforms.uTorusInvMatrix = { value: new THREE.Matrix4() };
-	pathTracingUniforms.uSphereInvMatrix = { value: new THREE.Matrix4() };
 
 } // end function initSceneData()
 
@@ -57,15 +44,12 @@ function initSceneData()
 
 // called automatically from within the animate() function (located in InitCommon.js file)
 function updateVariablesAndUniforms()
-{	
+{
+	//console.log(cameraControlsObject.position)
 	// TORUS
-	//torusObject.position.set(torusObject.position.x + dx, torusObject.position.y + dy, torusObject.position.z + dz);
 	torusObject.updateMatrixWorld(true); // 'true' forces immediate matrix update
 	pathTracingUniforms.uTorusInvMatrix.value.copy(torusObject.matrixWorld).invert();
 
-	// SPHERE
-	sphereObject.updateMatrixWorld(true); // 'true' forces immediate matrix update
-	pathTracingUniforms.uSphereInvMatrix.value.copy(sphereObject.matrixWorld).invert();
 
 	// INFO
 	cameraInfoElement.innerHTML = "FOV: " + worldCamera.fov + " / Aperture: " + apertureSize.toFixed(2) + " / FocusDistance: " + focusDistance + "<br>" + "Samples: " + sampleCounter;

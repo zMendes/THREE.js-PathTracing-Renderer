@@ -18,6 +18,9 @@ var FirstPersonCameraControls = function ( camera ) {
 	var yawObject = new THREE.Object3D();
 	yawObject.add( pitchObject );
 
+	pitchObject.rotation.x = 0;
+    yawObject.rotation.y = -0.8;
+
 	var movementX = 0;
 	var movementY = 0;
 			
